@@ -6,10 +6,11 @@ build-backend = "setuptools.build_meta"
 name = "linux-audio-switcher"
 version = "0.1.0"
 requires-python = ">=3.11"
-dependencies = [
-    "pystray>=0.19",
-    "Pillow>=10.0",
-]
+dependencies = []
+# Runtime deps are system packages, not pip:
+#   gir1.2-xapp-1.0   (tray icon — pre-installed on Cinnamon/Linux Mint)
+#   gir1.2-gtk-3.0    (pre-installed)
+#   pactl / pipewire  (pre-installed)
 
 [project.scripts]
 las = "linux_audio_switcher.cli:main"
