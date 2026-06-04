@@ -19,11 +19,18 @@ except (ImportError, ValueError):
     pass
 
 if not _XAPP:
+    # Only probe availability — do NOT import pystray here.
+    # pystray._appindicator runs `from gi.repository import Gtk` at module
+    # level, which locks in the GDK backend. We need to set GDK_BACKEND=x11
+    # before that import fires (see _run_pystray). importlib.util.find_spec
+    # checks the package exists without executing it.
     try:
-        import pystray
-        from PIL import Image, ImageDraw
-        _PYSTRAY = True
-    except ImportError:
+        import importlib.util
+        _PYSTRAY = (
+            importlib.util.find_spec("pystray") is not None and
+            importlib.util.find_spec("PIL") is not None
+        )
+    except Exception:
         pass
 
 # XApp StatusIcon reference kept for tooltip updates after device switches
@@ -309,6 +316,24 @@ def _on_next_input() -> None:
 # ── pystray backend (GNOME, KDE, other DEs without XApp) ─────────────────
 
 def _run_pystray() -> None:
+    import os
+
+    # pystray._appindicator imports Gtk at module level, which locks in the
+    # GDK backend at that moment. On a Wayland session the default backend is
+    # Wayland-native, which causes:
+    #   Gtk-CRITICAL: gtk_widget_get_scale_factor: assertion 'GTK_IS_WIDGET' failed
+    # because AppIndicator tries to query a widget scale factor through a code
+    # path that doesn't exist in the Wayland GDK backend.
+    #
+    # Setting GDK_BACKEND=x11 before the import forces GTK to use XWayland,
+    # which is always available on gaming-focused distros like Bazzite.
+    # os.environ.setdefault leaves any explicit user override in place.
+    if (os.environ.get("XDG_SESSION_TYPE") == "wayland" or
+            "WAYLAND_DISPLAY" in os.environ):
+        os.environ.setdefault("GDK_BACKEND", "x11")
+
+    import pystray  # noqa: PLC0415 — intentionally deferred
+
     icon = pystray.Icon(
         "linux-audio-switcher",
         _make_pystray_icon(),
@@ -324,6 +349,7 @@ def _pystray_menu_items():
     Checkmarks toggle carousel membership; the menu closes after each click
     (pystray limitation vs. the XApp version where the menu stays open).
     """
+    import pystray  # already in sys.modules after _run_pystray; re-import is instant
     try:
         sinks = audio.list_sinks()
         sources = audio.list_sources()
@@ -366,7 +392,8 @@ def _pystray_menu_items():
     yield pystray.MenuItem("Quit", lambda icon, item: icon.stop())
 
 
-def _make_pystray_icon() -> "Image.Image":
+def _make_pystray_icon():
+    from PIL import Image, ImageDraw  # noqa: PLC0415 — deferred with pystray
     size = 64
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
