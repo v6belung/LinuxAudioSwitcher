@@ -16,7 +16,10 @@ dependencies = []
 las = "linux_audio_switcher.cli:main"
 
 [project.optional-dependencies]
-dev = ["pytest>=7"]
+dev   = ["pytest>=7"]
+# Used automatically by install.sh on non-Cinnamon desktops.
+# Install manually: pip install '.[tray]'  or  pipx inject linux-audio-switcher pystray Pillow
+tray  = ["pystray>=0.19", "Pillow>=10.0"]
 
 [tool.setuptools.packages.find]
 where = ["."]
