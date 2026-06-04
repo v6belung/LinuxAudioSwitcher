@@ -4,10 +4,6 @@ import signal
 
 from linux_audio_switcher import audio, carousel, config as cfg, notify
 
-# ── Backend detection ─────────────────────────────────────────────────────
-_XAPP = False
-_PYSTRAY = False
-
 try:
     import gi
     gi.require_version('Gdk', '3.0')
@@ -16,42 +12,20 @@ try:
     from gi.repository import Gdk, GLib, Gtk, XApp
     _XAPP = True
 except (ImportError, ValueError):
-    pass
+    _XAPP = False
 
-if not _XAPP:
-    # Only probe availability — do NOT import pystray here.
-    # pystray._appindicator runs `from gi.repository import Gtk` at module
-    # level, which locks in the GDK backend. We need to set GDK_BACKEND=x11
-    # before that import fires (see _run_pystray). importlib.util.find_spec
-    # checks the package exists without executing it.
-    try:
-        import importlib.util
-        _PYSTRAY = (
-            importlib.util.find_spec("pystray") is not None and
-            importlib.util.find_spec("PIL") is not None
-        )
-    except Exception:
-        pass
-
-# XApp StatusIcon reference kept for tooltip updates after device switches
+# Kept for _update_tooltip() calls after device switches
 _icon: "XApp.StatusIcon | None" = None
 
 
 def run_daemon() -> None:
-    if _XAPP:
-        _run_xapp()
-    elif _PYSTRAY:
-        _run_pystray()
-    else:
+    if not _XAPP:
         raise RuntimeError(
-            "No tray backend available.\n"
-            "Cinnamon / Linux Mint:  sudo apt install gir1.2-xapp-1.0\n"
-            "GNOME:                  pip install pystray  (also install AppIndicator GNOME extension)\n"
-            "KDE:                    pip install pystray"
+            "XApp and GTK are required for the tray daemon.\n"
+            "Install: sudo apt install gir1.2-xapp-1.0 gir1.2-gtk-3.0"
         )
+    _run_xapp()
 
-
-# ── XApp backend (Cinnamon / Linux Mint) ─────────────────────────────────
 
 def _run_xapp() -> None:
     global _icon
@@ -249,8 +223,6 @@ def _update_tooltip() -> None:
         pass
 
 
-# ── Shared action handlers (XApp + pystray) ───────────────────────────────
-
 def _toggle_output(name: str, description: str) -> None:
     conf = cfg.load()
     if name in conf.output_devices:
@@ -311,94 +283,3 @@ def _on_next_input() -> None:
         _update_tooltip()
     except (audio.AudioError, carousel.CarouselError) as e:
         notify.notify_input(f"Error: {e}")
-
-
-# ── pystray backend (GNOME, KDE, other DEs without XApp) ─────────────────
-
-def _run_pystray() -> None:
-    import os
-
-    # pystray._appindicator imports Gtk at module level, which locks in the
-    # GDK backend at that moment. On a Wayland session the default backend is
-    # Wayland-native, which causes:
-    #   Gtk-CRITICAL: gtk_widget_get_scale_factor: assertion 'GTK_IS_WIDGET' failed
-    # because AppIndicator tries to query a widget scale factor through a code
-    # path that doesn't exist in the Wayland GDK backend.
-    #
-    # Setting GDK_BACKEND=x11 before the import forces GTK to use XWayland,
-    # which is always available on gaming-focused distros like Bazzite.
-    # os.environ.setdefault leaves any explicit user override in place.
-    if (os.environ.get("XDG_SESSION_TYPE") == "wayland" or
-            "WAYLAND_DISPLAY" in os.environ):
-        os.environ.setdefault("GDK_BACKEND", "x11")
-
-    import pystray  # noqa: PLC0415 — intentionally deferred
-
-    icon = pystray.Icon(
-        "linux-audio-switcher",
-        _make_pystray_icon(),
-        "Linux Audio Switcher",
-        pystray.Menu(_pystray_menu_items),
-    )
-    icon.run()
-
-
-def _pystray_menu_items():
-    """
-    Dynamic pystray menu for non-XApp desktops (GNOME, KDE, etc.).
-    Checkmarks toggle carousel membership; the menu closes after each click
-    (pystray limitation vs. the XApp version where the menu stays open).
-    """
-    import pystray  # already in sys.modules after _run_pystray; re-import is instant
-    try:
-        sinks = audio.list_sinks()
-        sources = audio.list_sources()
-        default_sink = audio.get_default_sink()
-        default_source = audio.get_default_source()
-        conf = cfg.load()
-    except audio.AudioError as e:
-        yield pystray.MenuItem(f"Error: {e}", None, enabled=False)
-        return
-
-    out_desc = next((s.description for s in sinks if s.name == default_sink), default_sink)
-    yield pystray.MenuItem(f"Output: {out_desc}", None, enabled=False)
-
-    for sink in sinks:
-        name, desc = sink.name, sink.description
-        yield pystray.MenuItem(
-            f"  {desc}",
-            lambda icon, item, n=name, d=desc: _toggle_output(n, d),
-            checked=lambda item, n=name: n in cfg.load().output_devices,
-        )
-
-    yield pystray.Menu.SEPARATOR
-    yield pystray.MenuItem("Next Output", lambda icon, item: _on_next_output())
-    yield pystray.Menu.SEPARATOR
-
-    in_desc = next((s.description for s in sources if s.name == default_source), default_source)
-    yield pystray.MenuItem(f"Input: {in_desc}", None, enabled=False)
-
-    for source in sources:
-        name, desc = source.name, source.description
-        yield pystray.MenuItem(
-            f"  {desc}",
-            lambda icon, item, n=name, d=desc: _toggle_input(n, d),
-            checked=lambda item, n=name: n in cfg.load().input_devices,
-        )
-
-    yield pystray.Menu.SEPARATOR
-    yield pystray.MenuItem("Next Input", lambda icon, item: _on_next_input())
-    yield pystray.Menu.SEPARATOR
-    yield pystray.MenuItem("Quit", lambda icon, item: icon.stop())
-
-
-def _make_pystray_icon():
-    from PIL import Image, ImageDraw  # noqa: PLC0415 — deferred with pystray
-    size = 64
-    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
-    draw.rectangle([8, 22, 26, 42], fill=(255, 255, 255, 255))
-    draw.polygon([(26, 22), (46, 10), (46, 54), (26, 42)], fill=(255, 255, 255, 255))
-    draw.arc([48, 16, 62, 48], -40, 40, fill=(255, 255, 255, 210), width=3)
-    draw.arc([54, 22, 62, 42], -40, 40, fill=(255, 255, 255, 160), width=2)
-    return img

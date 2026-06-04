@@ -54,19 +54,6 @@ def cmd_next_input(_args: argparse.Namespace) -> None:
 
 
 def cmd_daemon(_args: argparse.Namespace) -> None:
-    import os
-    # tray.py's module-level backend detection runs `from gi.repository import Gtk`
-    # the moment tray is imported (line below). On Wayland that locks GTK into the
-    # Wayland-native GDK backend, which causes:
-    #   Gtk-CRITICAL: gtk_widget_get_scale_factor: assertion 'GTK_IS_WIDGET' failed
-    # because AppIndicator tries to query a scale factor through a path that only
-    # exists in X11-mode GTK. Setting GDK_BACKEND=x11 here — before the import —
-    # forces GTK to use XWayland instead. os.environ.setdefault preserves any
-    # explicit user override and is a no-op on non-Wayland sessions.
-    if (os.environ.get("XDG_SESSION_TYPE") == "wayland" or
-            "WAYLAND_DISPLAY" in os.environ):
-        os.environ.setdefault("GDK_BACKEND", "x11")
-
     from linux_audio_switcher import tray
     try:
         tray.run_daemon()

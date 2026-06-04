@@ -26,29 +26,6 @@ The script:
 3. Drops an autostart entry so the tray icon starts with your desktop session
 4. Launches the daemon immediately — no re-login needed
 
-## Bazzite / immutable Linux
-
-On ostree-based systems (Bazzite, Fedora Silverblue, Kinoite, Aurora, etc.) the root
-filesystem is read-only, so `pip` must install into user space via `pipx`. If `pipx`
-isn't already present, install it first:
-
-```bash
-pip install --user pipx --break-system-packages
-echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
-source ~/.bashrc
-```
-
-Then run the normal installer — it auto-detects the immutable system and routes through
-`pipx` instead of `pip`. It also installs `pystray` automatically since `XApp.StatusIcon`
-(the Cinnamon tray backend) is not available on Fedora-based desktops.
-
-**Bazzite KDE:** the tray icon works out of the box via KDE's native SNI support.
-
-**Bazzite GNOME / any GNOME:** the tray icon requires the
-[AppIndicator extension](https://extensions.gnome.org/extension/615/appindicator-support/).
-`install.sh` prints a reminder if it detects GNOME without the extension.
-The hotkey commands (`las next-output` / `las next-input`) work without the tray on any DE.
-
 ## Keyboard shortcuts
 
 After installing, bind two shortcuts in your DE's keyboard settings:
@@ -72,7 +49,7 @@ Click the speaker icon in the panel to open the menu:
 - Active device shown in **bold** with a `▶` prefix
 - Tooltip shows the current output and input device names
 
-**Desktop support:** The tray uses `XApp.StatusIcon` natively on Cinnamon / Linux Mint. On other desktops install `pystray` (`pip install pystray`) for a compatible fallback — on GNOME you also need the [AppIndicator extension](https://extensions.gnome.org/extension/615/appindicator-support/).
+**Desktop support:** The tray uses `XApp.StatusIcon`, which is pre-installed on Cinnamon / Linux Mint. The hotkey commands work on any desktop without the tray.
 
 ## Configuration
 
