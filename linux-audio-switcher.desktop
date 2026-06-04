@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Linux Audio Switcher
+Comment=Audio device carousel tray daemon
+Exec=las daemon
+Icon=audio-volume-high
+Terminal=false
+Categories=AudioVideo;
+X-GNOME-Autostart-enabled=true

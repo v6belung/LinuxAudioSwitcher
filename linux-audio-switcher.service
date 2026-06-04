@@ -1,0 +1,14 @@
+[Unit]
+Description=Linux Audio Switcher tray daemon
+Documentation=https://github.com/aleksei-suvorov/linux-audio-switcher
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/las daemon
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target
