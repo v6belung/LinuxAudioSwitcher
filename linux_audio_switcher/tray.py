@@ -176,29 +176,38 @@ def _click_is_on_checkbox(item: "Gtk.MenuItem", check: "Gtk.CheckButton") -> boo
     - translate_coordinates walks the full widget hierarchy from check → menu toplevel
     - get_origin() gives the menu window's screen position
     - Gdk.Device.get_position() gives the pointer's screen position
-    Falls back to False (label action) if any widget is not yet realized.
+
+    Confirmed PyGObject return shapes (Python 3.12, GTK 3):
+    - translate_coordinates() → (dest_x, dest_y)          2-tuple, no bool
+    - get_origin()            → (depth, x, y)              3-tuple, discard depth
+    - get_position()          → (screen, x, y)             3-tuple
+
+    Falls back to False (→ label/activate action) on any error.
     """
-    pointer = Gdk.Display.get_default().get_default_seat().get_pointer()
-    _screen, ptr_x, ptr_y = pointer.get_position()
+    try:
+        pointer = Gdk.Display.get_default().get_default_seat().get_pointer()
+        _screen, ptr_x, ptr_y = pointer.get_position()
 
-    # check.get_toplevel() → the GtkMenu (which is a GtkWindow)
-    toplevel = check.get_toplevel()
-    ok, check_in_top_x, check_in_top_y = check.translate_coordinates(toplevel, 0, 0)
-    if not ok:
-        return False
+        toplevel = check.get_toplevel()
+        coords = check.translate_coordinates(toplevel, 0, 0)
+        if not coords or len(coords) < 2:
+            return False
+        check_x, check_y = coords  # (dest_x, dest_y)
 
-    top_win = toplevel.get_window()
-    if top_win is None:
-        return False
+        top_win = toplevel.get_window()
+        if top_win is None:
+            return False
 
-    win_x, win_y = top_win.get_origin()
-    alloc = check.get_allocation()
+        _, win_x, win_y = top_win.get_origin()  # (depth, x, y)
+        alloc = check.get_allocation()
 
-    check_screen_x = win_x + check_in_top_x
-    check_screen_y = win_y + check_in_top_y
+        check_screen_x = win_x + check_x
+        check_screen_y = win_y + check_y
 
-    return (check_screen_x <= ptr_x <= check_screen_x + alloc.width and
-            check_screen_y <= ptr_y <= check_screen_y + alloc.height)
+        return (check_screen_x <= ptr_x <= check_screen_x + alloc.width and
+                check_screen_y <= ptr_y <= check_screen_y + alloc.height)
+    except Exception:
+        return False  # safe fallback → treat as label click
 
 
 def _toggle_output(name: str) -> None:
