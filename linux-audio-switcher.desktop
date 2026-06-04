@@ -1,7 +1,9 @@
+# Template — install.sh writes the real file to ~/.config/autostart/
+# with the resolved path to the las binary.
 [Desktop Entry]
 Type=Application
 Name=Linux Audio Switcher
-Comment=Audio device carousel tray daemon
+Comment=Audio device carousel — cycles output/input devices via hotkey
 Exec=las daemon
 Icon=audio-volume-high
 Terminal=false

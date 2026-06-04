@@ -6,9 +6,10 @@ from linux_audio_switcher import audio, carousel, config as cfg, notify
 
 try:
     import gi
+    gi.require_version('Gdk', '3.0')
     gi.require_version('Gtk', '3.0')
     gi.require_version('XApp', '1.0')
-    from gi.repository import GLib, Gtk, XApp
+    from gi.repository import Gdk, GLib, Gtk, XApp
     _DEPS_OK = True
 except (ImportError, ValueError):
     _DEPS_OK = False
@@ -125,31 +126,28 @@ def _device_item(
     on_activate: callable,
 ) -> "Gtk.MenuItem":
     """
-    A custom menu row with two independent click targets:
+    A custom menu row:
 
-    [checkbox]  ▶ Device Name (bold if active)
-        │              └── click → set device as default (menu closes)
-        └── click → toggle carousel membership (menu stays open)
+        [checkbox]  ▶ Device Name (bold if active)
+
+    GTK menus use a pointer grab — child widget event handlers don't fire.
+    Both click targets route through MenuItem.activate. We distinguish them
+    by querying the pointer position at activate time and comparing it against
+    the checkbox widget's screen bounds.
+
+    Checkbox click → toggle carousel membership (visual state updates, menu closes)
+    Label click    → set device as default (notification fired, menu closes)
     """
     item = Gtk.MenuItem()
 
     box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
     box.set_border_width(2)
 
-    # Left: checkbox — clicking toggles carousel, menu stays open
     check = Gtk.CheckButton()
     check.set_active(in_carousel)
     check.set_can_focus(False)
-
-    def on_check_press(widget, event, toggle=on_carousel_toggle):
-        widget.set_active(not widget.get_active())
-        toggle()
-        return True  # consume event — prevent MenuItem.activate from firing
-
-    check.connect("button-press-event", on_check_press)
     box.pack_start(check, False, False, 0)
 
-    # Right: device name — clicking sets device as default
     escaped = GLib.markup_escape_text(label)
     name_label = Gtk.Label()
     name_label.set_markup(f"<b>▶ {escaped}</b>" if is_active else f"  {escaped}")
@@ -158,8 +156,49 @@ def _device_item(
     box.pack_start(name_label, True, True, 0)
 
     item.add(box)
-    item.connect("activate", lambda _, act=on_activate: act())
+
+    def on_item_activate(widget):
+        if _click_is_on_checkbox(widget, check):
+            check.set_active(not check.get_active())
+            on_carousel_toggle()
+        else:
+            on_activate()
+
+    item.connect("activate", on_item_activate)
     return item
+
+
+def _click_is_on_checkbox(item: "Gtk.MenuItem", check: "Gtk.CheckButton") -> bool:
+    """
+    Return True if the current pointer position overlaps the checkbox widget.
+
+    Uses screen-absolute coordinates throughout:
+    - translate_coordinates walks the full widget hierarchy from check → menu toplevel
+    - get_origin() gives the menu window's screen position
+    - Gdk.Device.get_position() gives the pointer's screen position
+    Falls back to False (label action) if any widget is not yet realized.
+    """
+    pointer = Gdk.Display.get_default().get_default_seat().get_pointer()
+    _screen, ptr_x, ptr_y = pointer.get_position()
+
+    # check.get_toplevel() → the GtkMenu (which is a GtkWindow)
+    toplevel = check.get_toplevel()
+    ok, check_in_top_x, check_in_top_y = check.translate_coordinates(toplevel, 0, 0)
+    if not ok:
+        return False
+
+    top_win = toplevel.get_window()
+    if top_win is None:
+        return False
+
+    win_x, win_y = top_win.get_origin()
+    alloc = check.get_allocation()
+
+    check_screen_x = win_x + check_in_top_x
+    check_screen_y = win_y + check_in_top_y
+
+    return (check_screen_x <= ptr_x <= check_screen_x + alloc.width and
+            check_screen_y <= ptr_y <= check_screen_y + alloc.height)
 
 
 def _toggle_output(name: str) -> None:
