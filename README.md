@@ -43,10 +43,13 @@ After installing, bind two shortcuts in your DE's keyboard settings:
 
 Click the speaker icon in the panel to open the menu:
 
-- **Checkbox** next to a device — toggles whether it is included in the carousel
+- **Checkbox** next to a device — toggles whether it is included in the carousel (fires a notification confirming the change)
 - **Device name** — immediately switches to that device
 - **Next Output / Next Input** — same as the hotkey
 - Active device shown in **bold** with a `▶` prefix
+- Tooltip shows the current output and input device names
+
+**Desktop support:** The tray uses `XApp.StatusIcon` natively on Cinnamon / Linux Mint. On other desktops install `pystray` (`pip install pystray`) for a compatible fallback — on GNOME you also need the [AppIndicator extension](https://extensions.gnome.org/extension/615/appindicator-support/).
 
 ## Configuration
 
@@ -70,12 +73,18 @@ Run `las list` to see device names for all currently detected devices.
 ## CLI reference
 
 ```
-las list          List all detected audio devices
-las next-output   Cycle to the next output device
-las next-input    Cycle to the next input device
-las daemon        Start the tray icon (handled by autostart after install)
-las config        Show current carousel configuration
+las list                            List all detected audio devices
+las next-output                     Cycle to the next output device
+las next-input                      Cycle to the next input device
+las daemon                          Start the tray icon (autostart handles this after install)
+las config                          Show current carousel configuration
+las config add-output <device>      Add a device to the output carousel
+las config remove-output <device>   Remove a device from the output carousel
+las config add-input <device>       Add a device to the input carousel
+las config remove-input <device>    Remove a device from the input carousel
 ```
+
+Use `las list` to get the exact device names to pass to `las config add-*`.
 
 ## Requirements
 

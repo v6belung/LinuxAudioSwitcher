@@ -62,7 +62,65 @@ def cmd_daemon(_args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
-def cmd_config(_args: argparse.Namespace) -> None:
+def cmd_config(args: argparse.Namespace) -> None:
+    action = getattr(args, "config_action", None)
+    if action is None:
+        _config_show()
+        return
+
+    device = args.device
+    try:
+        sinks = audio.list_sinks()
+        sources = audio.list_sources()
+    except audio.AudioError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    if action in ("add-output", "remove-output"):
+        _config_modify(
+            device=device,
+            kind="output",
+            remove=(action == "remove-output"),
+            known={s.name for s in sinks},
+            known_list=sinks,
+        )
+    else:
+        _config_modify(
+            device=device,
+            kind="input",
+            remove=(action == "remove-input"),
+            known={s.name for s in sources},
+            known_list=sources,
+        )
+
+
+def _config_modify(device, kind, remove, known, known_list) -> None:
+    if device not in known:
+        print(f"Warning: '{device}' not in currently detected {kind} devices.", file=sys.stderr)
+        print(f"Known {kind} devices:", file=sys.stderr)
+        for d in known_list:
+            print(f"  {d.name}", file=sys.stderr)
+
+    conf = cfg.load()
+    devices = conf.output_devices if kind == "output" else conf.input_devices
+
+    if remove:
+        if device not in devices:
+            print(f"Not in {kind} carousel: {device}", file=sys.stderr)
+            sys.exit(1)
+        devices.remove(device)
+        cfg.save(conf)
+        print(f"Removed from {kind} carousel: {device}")
+    else:
+        if device in devices:
+            print(f"Already in {kind} carousel: {device}")
+            return
+        devices.append(device)
+        cfg.save(conf)
+        print(f"Added to {kind} carousel: {device}")
+
+
+def _config_show() -> None:
     try:
         conf = cfg.load()
         sinks = audio.list_sinks()
@@ -84,7 +142,7 @@ def cmd_config(_args: argparse.Namespace) -> None:
             print(f"  {desc}")
             print(f"    {name}")
     else:
-        print("  (empty — run 'las list' and edit the config file)")
+        print("  (empty — use 'las config add-output <name>')")
 
     print("\nInput carousel:")
     if conf.input_devices:
@@ -93,10 +151,12 @@ def cmd_config(_args: argparse.Namespace) -> None:
             print(f"  {desc}")
             print(f"    {name}")
     else:
-        print("  (empty — run 'las list' and edit the config file)")
+        print("  (empty — use 'las config add-input <name>')")
 
-    print(f"\nEdit {path} to reorder or remove devices.")
-    print("The tray icon (las daemon) also lets you toggle devices via checkmarks.")
+    print(f"\nEdit {path} directly, or use:")
+    print("  las config add-output <name>     las config remove-output <name>")
+    print("  las config add-input <name>      las config remove-input <name>")
+    print("  las list                         (to see device names)")
 
 
 def main() -> None:
@@ -110,7 +170,12 @@ def main() -> None:
     sub.add_parser("next-output", help="Cycle to the next output (playback) device")
     sub.add_parser("next-input", help="Cycle to the next input (recording) device")
     sub.add_parser("daemon", help="Start the system tray icon daemon")
-    sub.add_parser("config", help="Show carousel configuration")
+
+    config_parser = sub.add_parser("config", help="Show or edit carousel configuration")
+    config_sub = config_parser.add_subparsers(dest="config_action", metavar="<action>")
+    for action in ("add-output", "remove-output", "add-input", "remove-input"):
+        p = config_sub.add_parser(action, help=f"{action} a device to/from the carousel")
+        p.add_argument("device", metavar="<device-name>", help="pactl device name (see 'las list')")
 
     args = parser.parse_args()
 
