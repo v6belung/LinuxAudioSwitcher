@@ -131,8 +131,11 @@ def _device_item(
     Custom menu row:   [checkbox]  ▶ Device Name
 
     GTK menus use a pointer grab — child widget event handlers never fire.
-    Both clicks route through MenuItem.activate; _click_is_on_checkbox uses
-    screen-coordinate comparison to distinguish checkbox from label area.
+    Clicks route through the MenuItem's own button-release-event/activate;
+    _click_is_on_checkbox uses screen-coordinate comparison to distinguish
+    checkbox from label area. Checkbox clicks are consumed on
+    button-release-event (returning True) so the menu stays open; label
+    clicks fall through to "activate", which closes the menu.
 
     margin_start(8) keeps the checkbox away from the panel edge and widens
     the effective click target. _click_is_on_checkbox adds 8px on the right
@@ -157,13 +160,17 @@ def _device_item(
 
     item.add(box)
 
-    def on_item_activate(widget):
+    def on_button_release(widget, _event):
         if _click_is_on_checkbox(widget, check):
             check.set_active(not check.get_active())
             on_carousel_toggle()
-        else:
-            on_activate()
+            return True  # consume event: keep the menu open
+        return False
 
+    def on_item_activate(_widget):
+        on_activate()
+
+    item.connect("button-release-event", on_button_release)
     item.connect("activate", on_item_activate)
     return item
 

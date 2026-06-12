@@ -94,15 +94,64 @@ def list_sources() -> list[AudioDevice]:
 
 
 def get_default_sink() -> str:
+    name = _wpctl_default("Audio/Sink")
+    if name:
+        return name
     info = _pactl("info")
     m = re.search(r'^Default Sink: (.+)$', info, re.MULTILINE)
-    return m.group(1).strip() if m else ""
+    name = m.group(1).strip() if m else ""
+    if not name or name.startswith("@"):
+        return _fallback_default("sinks")
+    return name
 
 
 def get_default_source() -> str:
+    name = _wpctl_default("Audio/Source")
+    if name:
+        return name
     info = _pactl("info")
     m = re.search(r'^Default Source: (.+)$', info, re.MULTILINE)
-    return m.group(1).strip() if m else ""
+    name = m.group(1).strip() if m else ""
+    if not name or name.startswith("@"):
+        return _fallback_default("sources")
+    return name
+
+
+def _wpctl_default(kind: str) -> str | None:
+    """
+    Resolve the configured default sink/source ('Audio/Sink' or
+    'Audio/Source') from wpctl's "Default Configured Node Names" table.
+
+    pipewire-pulse's `pactl info` can leave "Default Sink"/"Default Source"
+    stuck on a placeholder (e.g. '@DEFAULT_SOURCE@') or a stale device even
+    after set-default-sink/set-default-source succeeds, so prefer wpctl's
+    view of the configured default when it's available.
+    """
+    try:
+        result = subprocess.run(
+            ["wpctl", "status"], capture_output=True, text=True, check=True,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
+
+    m = re.search(rf'^\s*\d+\.\s+{re.escape(kind)}\s+(\S+)', result.stdout, re.MULTILINE)
+    return m.group(1) if m else None
+
+
+def _fallback_default(kind: str) -> str:
+    """
+    Resolve a concrete device name when pactl info reports a placeholder
+    (e.g. '@DEFAULT_SOURCE@'), which happens before any default has been
+    explicitly set. Prefers a RUNNING device, falling back to the first one.
+    """
+    raw = _pactl("list", kind)
+    blocks = _parse_device_blocks(raw)
+    if kind == "sources":
+        blocks = [b for b in blocks if not b.get("Name", "").endswith(".monitor")]
+    if not blocks:
+        return ""
+    running = next((b for b in blocks if b.get("State") == "RUNNING"), None)
+    return (running or blocks[0]).get("Name", "")
 
 
 def set_default_sink(name: str) -> None:

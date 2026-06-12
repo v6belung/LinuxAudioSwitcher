@@ -20,6 +20,29 @@ Default Sink: alsa_output.pci.analog-stereo
 Default Source: alsa_input.pci.analog-stereo
 """
 
+PACTL_INFO_PLACEHOLDER = """\
+Server Name: PulseAudio (on PipeWire 1.0.5)
+Default Sink: @DEFAULT_SINK@
+Default Source: @DEFAULT_SOURCE@
+"""
+
+WPCTL_STATUS = """\
+Audio
+ ├─ Sinks:
+ │  *   33. PCM2704 16-bit stereo audio DAC Analog Stereo [vol: 0.75]
+
+Settings
+ └─ Default Configured Node Names:
+         0. Audio/Sink    alsa_output.usb-Audioengine-00.analog-stereo
+         1. Audio/Source  alsa_input.pci-0000_16_00.6.analog-stereo
+"""
+
+WPCTL_STATUS_NO_DEFAULTS = """\
+Audio
+ ├─ Sinks:
+ │  *   33. PCM2704 16-bit stereo audio DAC Analog Stereo [vol: 0.75]
+"""
+
 PACTL_LIST_SINKS = """\
 Sink #60
 \tState: SUSPENDED
@@ -122,6 +145,59 @@ class TestGetDefaults:
     def test_get_default_source(self):
         with patch("subprocess.run", return_value=_make_run(PACTL_INFO)):
             assert audio.get_default_source() == "alsa_input.usb-046d_0823-00.analog-stereo"
+
+
+class TestGetDefaultsViaWpctl:
+    """
+    pipewire-pulse can leave `pactl info`'s Default Sink/Source stuck on a
+    placeholder or stale value even after set-default-* succeeds, so
+    get_default_* prefer wpctl's "Default Configured Node Names" table.
+    """
+
+    def test_wpctl_overrides_stale_pactl_info(self):
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = [_make_run(WPCTL_STATUS), _make_run(WPCTL_STATUS)]
+            assert audio.get_default_sink() == "alsa_output.usb-Audioengine-00.analog-stereo"
+            assert audio.get_default_source() == "alsa_input.pci-0000_16_00.6.analog-stereo"
+
+    def test_falls_back_to_pactl_info_when_wpctl_missing(self):
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = [FileNotFoundError(), _make_run(PACTL_INFO)]
+            assert audio.get_default_sink() == "alsa_output.usb-Audioengine-00.analog-stereo"
+
+    def test_falls_back_to_pactl_info_when_wpctl_has_no_defaults_table(self):
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = [_make_run(WPCTL_STATUS_NO_DEFAULTS), _make_run(PACTL_INFO)]
+            assert audio.get_default_source() == "alsa_input.usb-046d_0823-00.analog-stereo"
+
+
+class TestGetDefaultsPlaceholder:
+    """
+    Before any default has ever been explicitly set, pipewire-pulse can
+    report the literal '@DEFAULT_SINK@'/'@DEFAULT_SOURCE@' placeholder.
+    get_default_* should resolve this to a real device instead of returning
+    the placeholder string verbatim.
+    """
+
+    def test_sink_placeholder_resolves_to_running_device(self):
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = [
+                FileNotFoundError(),  # wpctl status unavailable
+                _make_run(PACTL_INFO_PLACEHOLDER),  # pactl info
+                _make_run(PACTL_LIST_SINKS),  # fallback lookup
+            ]
+            assert audio.get_default_sink() == "alsa_output.usb-Audioengine-00.analog-stereo"
+
+    def test_source_placeholder_resolves_excluding_monitors(self):
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = [
+                FileNotFoundError(),  # wpctl status unavailable
+                _make_run(PACTL_INFO_PLACEHOLDER),  # pactl info
+                _make_run(PACTL_LIST_SOURCES),  # fallback lookup
+            ]
+            name = audio.get_default_source()
+            assert not name.endswith(".monitor")
+            assert name == "alsa_input.usb-046d_0823-00.analog-stereo"
 
 
 class TestSetDefaults:

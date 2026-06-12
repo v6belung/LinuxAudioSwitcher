@@ -43,7 +43,7 @@ After installing, bind two shortcuts in your DE's keyboard settings:
 
 Click the speaker icon in the panel to open the menu:
 
-- **Checkbox** next to a device — toggles whether it is included in the carousel (fires a notification confirming the change)
+- **Checkbox** next to a device — toggles whether it is included in the carousel (fires a notification confirming the change, menu stays open so you can toggle multiple devices)
 - **Device name** — immediately switches to that device
 - **Next Output / Next Input** — same as the hotkey
 - Active device shown in **bold** with a `▶` prefix
@@ -92,3 +92,6 @@ Use `las list` to get the exact device names to pass to `las config add-*`.
 - Python 3.11+
 - `gir1.2-xapp-1.0` and `gir1.2-gtk-3.0` (pre-installed on Linux Mint / Cinnamon)
 - `notify-send` for desktop notifications (pre-installed on most distros)
+- `wpctl` (WirePlumber, pre-installed with PipeWire) — used to reliably detect the
+  current default device on setups where `pactl info` reports a stale or
+  placeholder default

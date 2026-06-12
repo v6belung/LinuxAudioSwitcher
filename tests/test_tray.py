@@ -3,7 +3,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
-from linux_audio_switcher.tray import _click_is_on_checkbox
+from linux_audio_switcher.tray import _click_is_on_checkbox, _device_item
 
 # ── Geometry ─────────────────────────────────────────────────────────────────
 # Window origin on screen:              (50, 100)
@@ -123,3 +123,49 @@ class TestFallbacks:
         assert _hit(215, 315, translate=(10, 10), win_origin=(1, 200, 300)) is True
         # 210 + 20 + 8 = 238; x=239 should be False
         assert _hit(239, 315, translate=(10, 10), win_origin=(1, 200, 300)) is False
+
+
+# ── _device_item: checkbox vs. label clicks ───────────────────────────────────
+
+from gi.repository import Gdk  # noqa: E402
+
+_BUTTON_RELEASE = Gdk.Event.new(Gdk.EventType.BUTTON_RELEASE)
+
+
+def _new_item(in_carousel=False):
+    toggle = MagicMock()
+    activate = MagicMock()
+    item = _device_item(
+        "Test Device",
+        in_carousel=in_carousel,
+        is_active=False,
+        on_carousel_toggle=toggle,
+        on_activate=activate,
+    )
+    check = item.get_children()[0].get_children()[0]
+    return item, check, toggle, activate
+
+
+class TestDeviceItemClicks:
+    def test_checkbox_click_toggles_and_keeps_menu_open(self):
+        item, check, toggle, activate = _new_item(in_carousel=False)
+        with patch("linux_audio_switcher.tray._click_is_on_checkbox", return_value=True):
+            handled = item.emit("button-release-event", _BUTTON_RELEASE)
+        assert handled is True  # event consumed: menu stays open
+        assert check.get_active() is True
+        toggle.assert_called_once()
+        activate.assert_not_called()
+
+    def test_label_click_does_not_toggle_checkbox(self):
+        item, check, toggle, activate = _new_item(in_carousel=False)
+        with patch("linux_audio_switcher.tray._click_is_on_checkbox", return_value=False):
+            handled = item.emit("button-release-event", _BUTTON_RELEASE)
+        assert handled is False  # event not consumed: normal activate proceeds
+        assert check.get_active() is False
+        toggle.assert_not_called()
+
+    def test_label_activation_calls_on_activate(self):
+        item, check, toggle, activate = _new_item(in_carousel=False)
+        item.emit("activate")
+        activate.assert_called_once()
+        toggle.assert_not_called()
